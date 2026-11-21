@@ -43,7 +43,15 @@ export const STORAGE_KEYS = {
   settings: 'skillbridge.settings.v1',
   selection: 'skillbridge.selection.v1',
   repoCache: 'skillbridge.repoCache.v1',
-  skillCachePrefix: 'skillbridge.skill.v1:',
+  /**
+   * Prefix for per-skill content entries. The remainder of the key encodes
+   * sha256(owner::repo::revision::path), so two repositories (or two revisions
+   * of one repository) can never collide. The `v2` suffix retires the old
+   * path-only `v1` entries.
+   */
+  skillCachePrefix: 'skillbridge.skill.v2:',
+  /** Prefix of the retired path-only cache; purged on cleanup. */
+  legacySkillCachePrefix: 'skillbridge.skill.v1:',
   lastInsert: 'skillbridge.lastInsert.v1',
 } as const;
 

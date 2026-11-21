@@ -105,6 +105,12 @@ export class BackgroundState {
       this.repo = null;
       this.error = null;
       this.status = 'idle';
+      // Skill ids are derived from paths, so an id selected in the previous
+      // repository can match an unrelated file in the new one. Pointing the
+      // extension at another repository therefore starts from an empty
+      // selection instead of silently carrying one over.
+      this.selection = { ids: [], allSelected: false };
+      await settingsService.clearSelection();
     }
     this.emit();
     if (repoChanged) {

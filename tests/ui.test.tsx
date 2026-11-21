@@ -13,6 +13,7 @@ import { ToastProvider } from '../src/ui/components/Toast';
 import type { Runtime } from '../src/ui/lib/runtime';
 import { MemoryStore, RepoCache } from '../src/services/cache';
 import { setPageCacheFactory } from '../src/ui/lib/useInsertFlow';
+import { sha256 } from '../src/core/hash';
 
 const files: TreeFile[] = [
   { path: 'Android/Kotlin/kotlin-standards.md', type: 'blob', size: 1200 },
@@ -175,7 +176,15 @@ beforeEach(async () => {
   const snapshot = makeSnapshot();
   await Promise.all(
     snapshot.skills.map((skill) =>
-      cache.writeSkill({ path: skill.path, content: contentFor(skill.id), hash: 'seeded', bytes: 64 }),
+      cache.writeSkill(
+        { owner: snapshot.config.owner, repo: snapshot.config.repo, revision: snapshot.commit },
+        {
+          path: skill.path,
+          content: contentFor(skill.id),
+          hash: sha256(contentFor(skill.id)),
+          bytes: 64,
+        },
+      ),
     ),
   );
   setPageCacheFactory(() => new RepoCache(store));

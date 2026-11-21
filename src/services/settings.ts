@@ -70,8 +70,14 @@ export class SettingsService {
   }
 
   async getSettings(): Promise<Settings> {
-    const raw = await this.store.get<unknown>(STORAGE_KEYS.settings);
-    return sanitizeSettings(raw);
+    // A storage read failure must not prevent the worker from starting: fall
+    // back to the defaults, which sanitizeSettings already guarantees.
+    try {
+      const raw = await this.store.get<unknown>(STORAGE_KEYS.settings);
+      return sanitizeSettings(raw);
+    } catch {
+      return sanitizeSettings(undefined);
+    }
   }
 
   async saveSettings(settings: Settings): Promise<Settings> {
@@ -86,9 +92,13 @@ export class SettingsService {
   }
 
   async getSelection(): Promise<SelectionState> {
-    const raw = await this.store.get<SelectionState>(STORAGE_KEYS.selection);
-    if (!raw || !Array.isArray(raw.ids)) return { ids: [], allSelected: false };
-    return normalizeSelection(raw);
+    try {
+      const raw = await this.store.get<SelectionState>(STORAGE_KEYS.selection);
+      if (!raw || !Array.isArray(raw.ids)) return { ids: [], allSelected: false };
+      return normalizeSelection(raw);
+    } catch {
+      return { ids: [], allSelected: false };
+    }
   }
 
   async saveSelection(selection: SelectionState): Promise<void> {

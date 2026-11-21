@@ -77,6 +77,19 @@ beforeEach(() => {
 });
 
 describe('SettingsService', () => {
+  it('falls back to defaults when storage cannot be read', async () => {
+    const broken = new MemoryStore();
+    broken.get = async () => {
+      throw new Error('storage unavailable');
+    };
+    const service = new SettingsService(broken);
+    const settings = await service.getSettings();
+    expect(settings.behavior.autoSend).toBe(false);
+    expect(settings.repository.owner).toBe('anthropics');
+    // The selection read is protected the same way.
+    expect(await service.getSelection()).toEqual({ ids: [], allSelected: false });
+  });
+
   it('returns defaults when nothing is stored', async () => {
     const service = new SettingsService(new MemoryStore());
     const settings = await service.getSettings();
@@ -205,6 +218,34 @@ describe('BackgroundState', () => {
     expect(restarted.getState().selection.ids).toEqual([id]);
   });
 
+  it('resets the selection when the repository changes', async () => {
+    const state = new BackgroundState({ github: githubStub() });
+    await state.ensureLoaded();
+    await state.setSettings({ repository: CONFIG } as never);
+    await state.refresh({ force: true });
+    const id = encodeURIComponent('skills/Android/kotlin.md');
+    await state.setSelection({ ids: [id], allSelected: false });
+    expect(state.getState().selection.ids).toHaveLength(1);
+
+    // Another repository can legitimately contain a file at the same path, so
+    // a path-derived id must never survive the switch.
+    await state.setSettings({ repository: { ...CONFIG, owner: 'someone-else' } } as never);
+    expect(state.getState().selection).toEqual({ ids: [], allSelected: false });
+    expect(memory[STORAGE_KEYS.selection]).toEqual({ ids: [], allSelected: false });
+  });
+
+  it('keeps the selection when only non-repository settings change', async () => {
+    const state = new BackgroundState({ github: githubStub() });
+    await state.ensureLoaded();
+    await state.setSettings({ repository: CONFIG } as never);
+    await state.refresh({ force: true });
+    const id = encodeURIComponent('skills/Android/kotlin.md');
+    await state.setSelection({ ids: [id], allSelected: false });
+
+    await state.setSettings({ behavior: { autoSend: true } } as never);
+    expect(state.getState().selection.ids).toEqual([id]);
+  });
+
   it('clears the selection and reports stats', async () => {
     const state = new BackgroundState({ github: githubStub() });
     await state.ensureLoaded();
@@ -276,8 +317,10 @@ describe('RepoCache with chrome storage', () => {
   it('survives a new store instance (persistence)', async () => {
     const { ChromeLocalStore } = await import('../src/services/cache');
     const first = new RepoCache(new ChromeLocalStore());
-    await first.writeSkill({ path: 'a.md', content: '# a', hash: 'h', bytes: 3 });
+    const scope = { owner: 'lm-arena', repo: 'lm-arena-skills', revision: 'deadbeefcafe' };
+    const { sha256 } = await import('../src/core/hash');
+    await first.writeSkill(scope, { path: 'a.md', content: '# a', hash: sha256('# a'), bytes: 3 });
     const second = new RepoCache(new ChromeLocalStore());
-    expect((await second.readSkillAny('a.md'))?.content).toBe('# a');
+    expect((await second.readSkillAny(scope, 'a.md'))?.content).toBe('# a');
   });
 });

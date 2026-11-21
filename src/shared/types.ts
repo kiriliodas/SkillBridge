@@ -57,6 +57,30 @@ export interface RepoSnapshot {
   warnings: string[];
 }
 
+/**
+ * Identity of the exact repository state a cached value belongs to.
+ *
+ * Skill content is only valid for one (repository, revision) pair: two repos
+ * may both contain `src/README.md`, and a branch move or a new commit may
+ * change a file without changing its path. Cache keys must therefore include
+ * both parts — never the path alone.
+ */
+export interface CacheScope {
+  owner: string;
+  repo: string;
+  /** Revision the content was read at: commit SHA (or branch name as fallback). */
+  revision: string;
+}
+
+/** Derive the cache scope of a snapshot (repository + exact revision). */
+export function snapshotScope(snapshot: Pick<RepoSnapshot, 'config' | 'commit'>): CacheScope {
+  return {
+    owner: snapshot.config.owner,
+    repo: snapshot.config.repo,
+    revision: snapshot.commit,
+  };
+}
+
 export type RepoStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface RepoErrorInfo {

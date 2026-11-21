@@ -129,6 +129,27 @@ beforeEach(() => {
 });
 
 describe('service worker protocol', () => {
+  it('purges the retired path-only cache on startup', async () => {
+    // A leftover entry from the pre-scoping format.
+    storage['skillbridge.skill.v1:deadbeefdeadbeefdeadbeef'] = {
+      path: 'a.md',
+      content: 'LEGACY',
+      hash: 'h',
+      bytes: 6,
+      fetchedAt: Date.now(),
+    };
+    const startup: (() => void)[] = [];
+    (chrome.runtime as unknown as { onStartup: { addListener: (fn: () => void) => void } }).onStartup = {
+      addListener: (fn: () => void) => startup.push(fn),
+    };
+    await import('../src/background/index');
+    expect(startup).toHaveLength(1);
+    startup[0]!();
+    // The purge is fire-and-forget; give the microtask queue a tick.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(storage['skillbridge.skill.v1:deadbeefdeadbeefdeadbeef']).toBeUndefined();
+  });
+
   it('registers a runtime message listener on load', async () => {
     await import('../src/background/index');
     expect(listeners.length).toBe(1);

@@ -3,6 +3,7 @@ import { MemoryStore, RepoCache } from '../src/services/cache';
 import { buildPackage, PackageBuildError, prefetchSkillContents, resolveSkillSources } from '../src/services/packageService';
 import { parseRepositoryTree } from '../src/core/repoTree';
 import { extractSkills } from '../src/core/compiler';
+import { sha256 } from '../src/core/hash';
 import type { RepoConfig, RepoSnapshot } from '../src/shared/types';
 import { DEFAULT_SETTINGS } from '../src/shared/config';
 
@@ -46,6 +47,14 @@ function makeFetch(): typeof fetch {
 }
 
 const allIds = (snapshot: RepoSnapshot) => snapshot.skills.map((s) => s.id);
+
+/** Cache scope of a snapshot (repository + revision). */
+const scopeOf = (snapshot: RepoSnapshot) => ({
+  owner: snapshot.config.owner,
+  repo: snapshot.config.repo,
+  revision: snapshot.commit,
+});
+const TEST_SCOPE = { owner: 'lm-arena', repo: 'skills', revision: 'abc123' };
 
 describe('buildPackage', () => {
   it('downloads every selected skill and compiles a lossless package', async () => {
@@ -200,33 +209,39 @@ describe('RepoCache', () => {
 
   it('round-trips skill content', async () => {
     const cache = new RepoCache(new MemoryStore());
-    await cache.writeSkill({ path: 'A/a.md', content: '# a', hash: 'h', bytes: 3 });
-    const read = await cache.readSkill('A/a.md');
+    await cache.writeSkill(TEST_SCOPE, { path: 'A/a.md', content: '# a', hash: sha256('# a'), bytes: 3 });
+    const read = await cache.readSkill(TEST_SCOPE, 'A/a.md');
     expect(read?.content).toBe('# a');
-    expect(await cache.readSkill('A/other.md')).toBeNull();
+    expect(await cache.readSkill(TEST_SCOPE, 'A/other.md')).toBeNull();
   });
 
   it('does not cache oversized files', async () => {
     const cache = new RepoCache(new MemoryStore());
-    await cache.writeSkill({ path: 'big.md', content: 'x', hash: 'h', bytes: 10 * 1024 * 1024 });
-    expect(await cache.readSkillAny('big.md')).toBeNull();
+    await cache.writeSkill(TEST_SCOPE, { path: 'big.md', content: 'x', hash: 'h', bytes: 10 * 1024 * 1024 });
+    expect(await cache.readSkillAny(TEST_SCOPE, 'big.md')).toBeNull();
   });
 
   it('evicts the oldest entries beyond the limit', async () => {
     const store = new MemoryStore();
     const cache = new RepoCache(store);
     for (let i = 0; i < 405; i++) {
-      await cache.writeSkill({ path: `f${i}.md`, content: 'x', hash: 'h', bytes: 1, fetchedAt: i });
+      await cache.writeSkill(TEST_SCOPE, {
+        path: `f${i}.md`,
+        content: String(i),
+        hash: sha256(String(i)),
+        bytes: 1,
+        fetchedAt: i,
+      });
     }
     const stats = await cache.stats();
     expect(stats.cachedSkills).toBeLessThanOrEqual(400);
-    expect(await cache.readSkillAny('f0.md')).toBeNull();
-    expect(await cache.readSkillAny('f404.md')).not.toBeNull();
+    expect(await cache.readSkillAny(TEST_SCOPE, 'f0.md')).toBeNull();
+    expect(await cache.readSkillAny(TEST_SCOPE, 'f404.md')).not.toBeNull();
   });
 
   it('clears everything', async () => {
     const cache = new RepoCache(new MemoryStore());
-    await cache.writeSkill({ path: 'a.md', content: 'x', hash: 'h', bytes: 1 });
+    await cache.writeSkill(TEST_SCOPE, { path: 'a.md', content: 'x', hash: sha256('x'), bytes: 1 });
     await cache.writeSnapshot(makeSnapshot());
     await cache.clearAll();
     expect(await cache.stats()).toMatchObject({ cachedSkills: 0, repoCache: false });
