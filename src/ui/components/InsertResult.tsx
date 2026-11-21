@@ -3,7 +3,7 @@
  * about what happened and always offers the fallback actions (download +
  * copy prompt) so a partial failure is never a dead end.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { CompiledPackageLite, IntegrationOutcome, IntegrationReport, StepResult } from '../lib/insertTypes';
 import { Button } from './Button';
 import { IconCheck, IconCheckCircle, IconAlert, IconDownload, IconCopy, IconX, IconInfo } from './Icons';
@@ -58,9 +58,62 @@ export function InsertResult({ report, pkg, onClose, onDownload, onCopyPrompt, c
   const copy = OUTCOME_COPY[report.outcome];
   const fallbackNeeded = report.outcome !== 'sent' && report.outcome !== 'attached-and-filled';
   const diagnostics = useMemo(() => report.diagnostics, [report.diagnostics]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef<Element | null>(null);
+
+  // Move focus into the dialog, keep Tab inside it, restore it on close. The
+  // dialog already claims aria-modal, so it must behave like one.
+  useEffect(() => {
+    previousFocus.current = document.activeElement;
+    const node = dialogRef.current;
+    const focusables = () =>
+      Array.from(
+        node?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+    const first = focusables()[0];
+    (first ?? node)?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const firstItem = items[0]!;
+      const lastItem = items[items.length - 1]!;
+      const active = document.activeElement;
+      if (!event.shiftKey && active === lastItem) {
+        event.preventDefault();
+        firstItem.focus();
+      } else if (event.shiftKey && (active === firstItem || active === node)) {
+        event.preventDefault();
+        lastItem.focus();
+      }
+    };
+
+    node?.addEventListener('keydown', onKeyDown);
+    return () => {
+      node?.removeEventListener('keydown', onKeyDown);
+      const previous = previousFocus.current;
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [onClose]);
 
   return (
-    <div className="result" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <div
+      className="result"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="result-title"
+      ref={dialogRef}
+      tabIndex={-1}
+    >
       <div className={`result__banner result__banner--${copy.tone}`} role={copy.tone === 'error' ? 'alert' : 'status'}>
         <span className="result__banner-icon">
           {copy.tone === 'success' ? <IconCheckCircle size={18} /> : <IconAlert size={18} />}

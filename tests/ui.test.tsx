@@ -427,6 +427,27 @@ describe('library UI', () => {
     vi.unstubAllGlobals();
   });
 
+  it('traps focus in the result dialog and closes it with Escape', async () => {
+    const stub = createStub();
+    runtimeRef.current = stub.runtime;
+    await mount();
+    await expandCategory('Android');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Compile|Insert|Install|Send/ }));
+    });
+    const dialog = await screen.findByRole('dialog');
+    // Focus moved inside the dialog.
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+    await act(async () => {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('renders the popup surface with the same data', async () => {
     runtimeRef.current = createStub({ mode: 'preview' }).runtime;
     await mount('popup');

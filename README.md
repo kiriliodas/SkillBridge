@@ -72,7 +72,7 @@ SkillBridge is a Chrome extension (Manifest V3) with no backend, no account and 
 
 ---
 
-**Accessibility.** The category tree is a real keyboard surface: rows are focusable, `Enter` opens a preview, `Space` toggles selection, `←`/`→` collapse and expand branches, `/` focuses search, and `Esc` closes the preview or dialog. Focus rings use the accent colour at 2 px.
+**Accessibility.** The category tree is a real keyboard surface: rows are focusable, `Enter` opens a preview, `Space` toggles selection, `←`/`→` collapse and expand branches, `/` focuses search, and `Esc` closes the preview or dialog. The result dialog is a true modal: focus moves into it, `Tab` cycles inside, `Esc` closes it and focus returns to where it was. Focus rings use the accent colour at 2 px.
 
 ---
 
