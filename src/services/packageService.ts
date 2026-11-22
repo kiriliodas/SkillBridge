@@ -93,7 +93,14 @@ export async function resolveSkillSources(options: ResolveContentOptions): Promi
       continue;
     }
 
-    const result = await fetchSkillContent(config, skill.path, snapshot.commit, deps.github);
+    // Pin to the verified commit when available so a branch that moves mid-build cannot
+    // mix two revisions into one package; otherwise fall back to the branch name.
+    const result = await fetchSkillContent(
+      config,
+      skill.path,
+      snapshot.revision ?? snapshot.commit,
+      deps.github,
+    );
     if (!result.ok) {
       failed.push({ path: skill.path, message: result.error.message });
       done++;

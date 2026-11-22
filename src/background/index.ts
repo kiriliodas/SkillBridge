@@ -189,7 +189,11 @@ export async function handleRequest(message: RuntimeRequest): Promise<unknown> {
       const scope = snapshotScope(snapshot);
       const cached = await repoCache.readSkillAny(scope, skill.path);
       if (cached) return { content: cached.content, cached: true };
-      const result = await fetchSkillContent(snapshot.config, skill.path, snapshot.commit);
+      const result = await fetchSkillContent(
+        snapshot.config,
+        skill.path,
+        snapshot.revision ?? snapshot.commit,
+      );
       if (!result.ok) throw new Error(result.error.message);
       await repoCache.writeSkill(scope, {
         path: skill.path,
