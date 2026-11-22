@@ -41,21 +41,19 @@ export function findComposer(root: ParentNode): { handle: ComposerHandle; select
   const isUsable = (el: Element): boolean => {
     const html = el as HTMLElement;
     if (html.closest('[aria-hidden="true"]')) return false;
-    if (html.hasAttribute('disabled')) return false;
-    const readOnly = (html as HTMLTextAreaElement).readOnly;
-    if (readOnly) return false;
-    const rect = html.getBoundingClientRect();
-    // In a real browser, require a reasonable footprint (bottom composer).
-    if (rect.width > 0 || rect.height > 0) return rect.width >= 80;
+    if (html.hasAttribute('disabled') || html.hasAttribute('hidden')) return false;
+    if ((html as HTMLTextAreaElement).readOnly) return false;
+    const style = html.ownerDocument.defaultView?.getComputedStyle(html);
+    if (style?.display === 'none' || style?.visibility === 'hidden') return false;
     return html.isConnected;
   };
+  const isActuallyVisible = (el: HTMLElement): boolean => {
+    const rect = el.getBoundingClientRect();
+    return rect.width >= 80 && rect.height > 0;
+  };
 
-  for (const selector of ['textarea[data-sentry-element="AutoResizeTextarea"]']) {
-    const candidates = queryAll<HTMLElement>(root, selector);
-    const found = candidates.find(isUsable);
-    if (found) return { handle: { element: found, kind: 'textarea' }, selector };
-  }
-  for (const selector of [
+  const selectors = [
+    'textarea[data-sentry-element="AutoResizeTextarea"]',
     'textarea[placeholder]',
     'textarea[aria-label]',
     'textarea',
@@ -63,15 +61,26 @@ export function findComposer(root: ParentNode): { handle: ComposerHandle; select
     'div[contenteditable="true"][data-placeholder]',
     'div[contenteditable="true"]',
     '[role="textbox"]',
-  ]) {
+  ];
+  const candidates: Array<{ element: HTMLElement; selector: string; kind: ComposerKind }> = [];
+  const seen = new Set<HTMLElement>();
+  for (const selector of selectors) {
     for (const element of queryAll<HTMLElement>(root, selector)) {
-      if (!isUsable(element)) continue;
+      if (seen.has(element) || !isUsable(element)) continue;
+      seen.add(element);
       const kind: ComposerKind = element.tagName.toLowerCase() === 'textarea' ? 'textarea' : 'contenteditable';
       if (kind === 'contenteditable' && element.getAttribute('contenteditable') !== 'true') continue;
-      return { handle: { element, kind }, selector };
+      candidates.push({ element, selector, kind });
     }
   }
-  return null;
+
+  // Prefer a genuinely visible composer. React pages can keep hidden or stale
+  // textareas mounted; selecting one would make a DOM-value check pass while
+  // the user-facing message box remains empty.
+  const selected = candidates.find(({ element }) => isActuallyVisible(element)) ?? candidates[0];
+  return selected
+    ? { handle: { element: selected.element, kind: selected.kind }, selector: selected.selector }
+    : null;
 }
 
 export function findFileInputs(root: ParentNode): HTMLInputElement[] {
