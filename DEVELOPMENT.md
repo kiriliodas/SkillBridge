@@ -51,8 +51,8 @@ modules carry the correctness guarantees, so every behaviour change needs a test
 | Module | Notes |
 | --- | --- |
 | `github.ts` | `fetchRepoTree`, `loadRepositorySnapshot`, `fetchSkillContent`, `probeRepository`. Every function takes `{ fetchImpl?, token? }`, so tests never touch the network. Errors are `RepoErrorInfo` with an actionable `hint`. |
-| `cache.ts` | `KeyValueStore` interface (`ChromeLocalStore`, `MemoryStore`), `RepoCache` (snapshots + skill bodies, TTL, size cap, eviction). |
-| `packageService.ts` | `buildPackage(snapshot, selection, deps)` = resolve (cache→network) → verify hashes → compile → prompt. `resolveSkillSources`, `prefetchSkillContents`. |
+| `cache.ts` | `KeyValueStore` interface (`ChromeLocalStore`, `MemoryStore`), `RepoCache` (snapshots + skill bodies, TTL, size cap, eviction). Skill entries are keyed by `skillCacheKey(scope, path)` = `sha256(owner::repo::revision::path)`; `repoCache.readSkillAny(scope, path)` / `writeSkill(scope, entry)` require a `CacheScope` and refuse unscoped records. Writes are best-effort and evict on quota errors. |
+| `packageService.ts` | `buildPackage(snapshot, selection, deps)` = resolve (cache→network) → verify hashes → compile → prompt. `resolveSkillSources`, `prefetchSkillContents`. Both derive the cache scope with `snapshotScope(snapshot)`, so content is never shared across repositories or commits. |
 | `settings.ts` | `sanitizeSettings` (never throws), `SettingsService` with deep merge. |
 
 ### `src/background` — service worker
@@ -189,8 +189,9 @@ handler instead, add that as another strategy in `attachPackage` — keep
 
 `RepoConfig` + `RepoSnapshot` are already self-describing (`config` inside the
 snapshot). Wrap `BackgroundState` in a map keyed by repository and expose an active
-id. The cache key (`repoCacheKey`) already includes owner/repo/branch/root/excludes,
-so entries cannot collide.
+id. The snapshot cache key (`repoCacheKey`) already includes owner/repo/branch/root/excludes,
+and skill content is scoped by `snapshotScope(snapshot)` (owner/repo/commit), so
+entries cannot collide.
 
 ---
 

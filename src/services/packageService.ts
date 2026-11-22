@@ -13,6 +13,7 @@ import type {
   SkillPackage,
   SkillSource,
 } from '../shared/types';
+import { snapshotScope } from '../shared/types';
 import { resolveSelectedSkills } from '../core/selection';
 import { fetchSkillContent, type GithubDeps } from './github';
 import type { RepoCache } from './cache';
@@ -69,11 +70,14 @@ export async function resolveSkillSources(options: ResolveContentOptions): Promi
   let downloaded = 0;
   let cached = 0;
   const config: RepoConfig = snapshot.config;
+  // Content is cached per repository revision: a branch switch or a new commit
+  // must never serve the previous revision's bytes.
+  const scope = snapshotScope(snapshot);
   const total = skills.length;
   let done = 0;
 
   for (const skill of skills) {
-    const cachedHit = options.bypassCache ? null : await deps.cache.readSkillAny(skill.path);
+    const cachedHit = options.bypassCache ? null : await deps.cache.readSkillAny(scope, skill.path);
     if (cachedHit) {
       cached++;
       sources.push({
@@ -99,7 +103,7 @@ export async function resolveSkillSources(options: ResolveContentOptions): Promi
     const content = result.data;
     const hash = sha256(content);
     downloaded++;
-    await deps.cache.writeSkill({
+    await deps.cache.writeSkill(scope, {
       path: skill.path,
       content,
       hash,

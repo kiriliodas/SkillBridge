@@ -43,6 +43,7 @@ SkillBridge is a Chrome extension (Manifest V3) with no backend, no account and 
 - Preview the **original** Markdown of any skill before selecting it (rendered + raw source view).
 - Selection summary: skill count, categories represented, estimated package size and estimated line count.
 - Manual refresh, cached metadata (10 min) and cached skill content (24 h). Skill bodies are only downloaded when previewed or compiled.
+- **Cache entries are scoped to `owner/repo` + the commit SHA** (never the file path alone), so two repositories sharing a path — or a branch switch or new commit — can never serve another repository's or an older revision's bytes. Cache writes are best-effort: a full storage quota degrades to "no cache" instead of failing a build.
 
 **Compilation**
 
@@ -389,6 +390,10 @@ Manual installation: open LM Arena → attach the downloaded `.md` with the atta
 **Cache**
 
 - Cached skill count and size, and a “Clear cached data” action.
+- Entries are keyed by `sha256(owner::repo::revision::path)` and stored under `skillbridge.skill.v2:`. They are scoped to a commit, so a refresh that moves the branch re-downloads changed files and never mixes revisions.
+- Each entry's SHA-256 is verified on read: a record corrupted at rest is treated as a miss and re-downloaded, never compiled into a package. The cache is strictly optional — a full quota or an unavailable `chrome.storage.local` degrades to “no cache” instead of failing a build.
+- Turning off “Remember selected skills” erases the stored selection. Pointing the extension at another repository starts from an empty selection, because path-derived skill ids can collide across repositories.
+- Entries from the older path-only format (`skillbridge.skill.v1:`) are unreadable by design and are purged automatically on install and on browser startup.
 
 Settings are stored with `chrome.storage.local`, merged with defaults on read, and sanitized field by field — a corrupt or outdated value can never break the extension.
 
@@ -472,7 +477,8 @@ Coverage by area:
 | `prompt.test.ts` | 1/many/large packages, categories, counts, file name, no hardcoded names, stability. |
 | `github.test.ts` | URL building, 404/401/403/409/451/5xx mapping, network errors, truncation, token handling. |
 | `packageService.test.ts` | Download/cache behaviour, subset ordering, failures, size limit, eviction. |
-| `background.test.ts` | Settings sanitizing, repository lifecycle, caching, pruning, tab bridge, error reporting. |
+| `cacheScope.test.ts` | Cache isolation: same path in two repositories, commit and branch changes, legacy entries, eviction, quota failures, and compilation/prefetch scoping. |
+| `background.test.ts` | Settings sanitizing, repository lifecycle, caching, pruning, selection reset on repository change, tab bridge, error reporting. |
 | `lmarena.test.ts` | Full adapter flows on a simulated composer: success, missing composer/input, attachment failure, verification warning, auto-send safety, contenteditable. |
 | `markdown.test.ts` | Rendering plus XSS safety (raw HTML, `javascript:`/`data:` URLs, attribute injection). |
 | `ui.test.tsx` | Real React app in jsdom: tree, selection, search, preview, settings, insert flow, error states. |

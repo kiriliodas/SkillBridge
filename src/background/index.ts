@@ -14,15 +14,21 @@ import type {
   RuntimeRequest,
   Settings,
 } from '../shared/types';
+import { snapshotScope } from '../shared/types';
 
 const state = getBackgroundState();
 
 // Warm the state on install/update so the first popup open is fast.
 chrome.runtime.onInstalled.addListener(() => {
   void state.ensureLoaded();
+  // Drop the retired path-only skill cache. Its entries carry no repository or
+  // revision identity, so they can never be served again — keeping them would
+  // only waste the storage quota.
+  void repoCache.purgeLegacy().catch(() => undefined);
 });
 chrome.runtime.onStartup.addListener(() => {
   void state.ensureLoaded();
+  void repoCache.purgeLegacy().catch(() => undefined);
 });
 
 state.subscribe(() => {
@@ -178,11 +184,14 @@ export async function handleRequest(message: RuntimeRequest): Promise<unknown> {
       if (!snapshot) throw new Error('No repository loaded.');
       const skill = snapshot.skills.find((s) => s.id === message.id);
       if (!skill) throw new Error('Skill not found in the current repository snapshot.');
-      const cached = await repoCache.readSkillAny(skill.path);
+      // Scope by repository *and* revision: previews must show the content of
+      // the snapshot currently on screen, never a stale or foreign file.
+      const scope = snapshotScope(snapshot);
+      const cached = await repoCache.readSkillAny(scope, skill.path);
       if (cached) return { content: cached.content, cached: true };
       const result = await fetchSkillContent(snapshot.config, skill.path, snapshot.commit);
       if (!result.ok) throw new Error(result.error.message);
-      await repoCache.writeSkill({
+      await repoCache.writeSkill(scope, {
         path: skill.path,
         content: result.data,
         hash: sha256(result.data),
