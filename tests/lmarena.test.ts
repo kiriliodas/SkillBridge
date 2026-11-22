@@ -111,6 +111,22 @@ describe('inspectDom', () => {
   });
 });
 
+describe('LmArenaAdapter — composer selection', () => {
+  it('prefers the visible composer over a hidden stale textarea', async () => {
+    const page = createPage();
+    const hidden = document.createElement('textarea');
+    hidden.setAttribute('data-sentry-element', 'AutoResizeTextarea');
+    hidden.style.display = 'none';
+    page.doc.querySelector('.composer')!.prepend(hidden);
+
+    const report = await fastAdapter().run(baseInput(), page.doc);
+
+    expect(report.outcome).toBe('attached-and-filled');
+    expect(hidden.value).toBe('');
+    expect(page.textarea.value).toContain('Install the Skill library');
+  });
+});
+
 describe('LmArenaAdapter — happy paths', () => {
   it('attaches the package, fills the prompt and stops when auto-send is off', async () => {
     const page = createPage();
