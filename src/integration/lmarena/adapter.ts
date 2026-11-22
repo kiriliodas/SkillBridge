@@ -248,12 +248,22 @@ export class LmArenaAdapter {
     activeComposer = current.handle;
     let retained = composerContainsPrompt(activeComposer, prompt);
     if (!retained) {
-      fillComposer(activeComposer, prompt);
-      await this.settle();
-      current = findComposer(doc);
-      if (current) {
-        activeComposer = current.handle;
-        retained = composerContainsPrompt(activeComposer, prompt);
+      // Retry only when the page cleared the composer during its controlled
+      // update. If it now contains other text, preserve it: that may be a
+      // deliberate user edit and must never be overwritten by an automatic retry.
+      const currentText = normalizeText(
+        activeComposer.kind === 'textarea'
+          ? (activeComposer.element as HTMLTextAreaElement).value
+          : activeComposer.element.textContent ?? '',
+      );
+      if (currentText.length === 0) {
+        fillComposer(activeComposer, prompt);
+        await this.settle();
+        current = findComposer(doc);
+        if (current) {
+          activeComposer = current.handle;
+          retained = composerContainsPrompt(activeComposer, prompt);
+        }
       }
     }
     if (!retained) {
