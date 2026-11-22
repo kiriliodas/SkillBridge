@@ -258,6 +258,7 @@ export class LmArenaAdapter {
         await this.settle();
         current = findComposer(doc);
         ok = Boolean(current && composerContainsPrompt(current.handle, prompt));
+        if (current) activeComposer = current.handle;
       }
     }
     if (!ok || !composerContainsPrompt(activeComposer, prompt)) {
