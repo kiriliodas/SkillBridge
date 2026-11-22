@@ -125,6 +125,29 @@ describe('LmArenaAdapter — composer selection', () => {
     expect(hidden.value).toBe('');
     expect(page.textarea.value).toContain('Install the Skill library');
   });
+
+  it('retries prompt insertion if the page resets the textarea during its React update', async () => {
+    const page = createPage();
+    let resetOnce = false;
+    page.textarea.addEventListener('input', () => {
+      if (resetOnce) return;
+      resetOnce = true;
+      setTimeout(() => {
+        page.textarea.value = '';
+      }, 0);
+    });
+    const adapter = new LmArenaAdapter({
+      settleMs: 10,
+      attachTimeoutMs: 150,
+      pollMs: 10,
+    });
+
+    const report = await adapter.run(baseInput(), page.doc);
+
+    expect(report.outcome).toBe('attached-and-filled');
+    expect(page.textarea.value).toContain('Install the Skill library');
+    expect(findStep(report, 'verify-prompt')?.status).toBe('ok');
+  });
 });
 
 describe('LmArenaAdapter — happy paths', () => {
