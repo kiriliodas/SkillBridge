@@ -23,6 +23,8 @@ const release = resolve(root, 'release');
 
 const SOURCE_INCLUDE = [
   'src',
+  'skills',
+  'skill-library',
   'tests',
   'scripts',
   'public',

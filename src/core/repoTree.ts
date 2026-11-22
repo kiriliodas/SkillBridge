@@ -30,6 +30,41 @@ export interface ParseResult {
 
 const GENERIC_FILE_NAMES = new Set(['skill', 'index', 'readme', 'main']);
 
+/**
+ * Acronyms that appear in skill file names and must keep their capitalisation.
+ * Deliberately a short, explicit list: guessing at capitalisation mangles names,
+ * so only well-established technical acronyms are restored. Keys are lowercase.
+ */
+const COMMON_ACRONYMS = new Map<string, string>([
+  ['api', 'API'],
+  ['css', 'CSS'],
+  ['csv', 'CSV'],
+  ['db', 'DB'],
+  ['ddd', 'DDD'],
+  ['devops', 'DevOps'],
+  ['git', 'Git'],
+  ['html', 'HTML'],
+  ['http', 'HTTP'],
+  ['ia', 'IA'],
+  ['ide', 'IDE'],
+  ['json', 'JSON'],
+  ['llm', 'LLM'],
+  ['ml', 'ML'],
+  ['orm', 'ORM'],
+  ['pdf', 'PDF'],
+  ['rag', 'RAG'],
+  ['rest', 'REST'],
+  ['sdk', 'SDK'],
+  ['sre', 'SRE'],
+  ['sql', 'SQL'],
+  ['ui', 'UI'],
+  ['uuid', 'UUID'],
+  ['ux', 'UX'],
+  ['wcag', 'WCAG'],
+  ['xml', 'XML'],
+  ['yaml', 'YAML'],
+]);
+
 export function normalizeRepoConfig(config: RepoConfig): RepoConfig {
   return {
     owner: config.owner.trim(),
@@ -94,6 +129,12 @@ export function prettifyName(raw: string): string {
       // Keep words that are already mixed/upper case (API, iOS, SQL, README).
       if (word.length > 1 && word === word.toUpperCase() && /[A-Z]/.test(word)) return word;
       if (/^[A-Z][a-z]+[A-Z]/.test(word)) return word; // iPhone, macOS-style
+      const lower = word.toLocaleLowerCase();
+      // Acronyms such as "api", "sql", "rag", "llm" or "ui" read as broken words when
+      // only the first letter is capitalised ("Api Design"). Restore common ones;
+      // anything else stays sentence-cased so real names are not mangled.
+      const acronym = COMMON_ACRONYMS.get(lower);
+      if (acronym) return acronym;
       return word[0]!.toLocaleUpperCase() + word.slice(1);
     })
     .join(' ');

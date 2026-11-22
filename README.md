@@ -15,6 +15,7 @@ SkillBridge is a Chrome extension (Manifest V3) with no backend, no account and 
 - [Build from source](#build-from-source)
 - [GitHub repository configuration](#github-repository-configuration)
 - [How to organize the Skill repository](#how-to-organize-the-skill-repository)
+- [The bundled Skill library](#the-bundled-skill-library)
 - [How to add new Skills](#how-to-add-new-skills)
 - [How compilation works](#how-compilation-works)
 - [Prompt generation](#prompt-generation)
@@ -230,6 +231,45 @@ Naming rules:
 - Generic file names (`SKILL.md`, `index.md`, `skill.md`, `main.md`) use the parent folder name instead, which suits folder-per-skill repositories.
 - **Folder path → category hierarchy.** Spaces, accents, emoji and non-Latin scripts are preserved exactly.
 - Sorting is deterministic and locale-aware.
+
+---
+
+## The bundled Skill library
+
+This repository ships a curated library of **40 skills** in `skills/`, ready to be used as the
+SkillBridge source with no further configuration.
+
+```
+skills/                      ← the only folder the scanner reads (rootDir = "skills")
+├── development/             backend, frontend, typescript, python, databases,
+│                            testing, debugging, git
+├── ai/                      prompting, agents, evaluation, retrieval
+├── security/                application-security, supply-chain, systems (defensive only)
+├── analysis/                reasoning, decisions, data
+├── research/                source verification, literature, spikes
+├── writing/                 technical writing, editing, translation
+├── design/                  accessibility, UI review, design systems
+├── productivity/            planning, prioritisation, notes
+├── business/                proposals, discovery, meetings
+└── education/               explanation, study design
+
+skill-library/               ← documentation, deliberately OUTSIDE the scanned root
+├── INDEX.md                 start here: discovery by task
+├── CATALOG.md               every skill with its description and score
+├── SOURCES.md               method, rubric, what was taken from where
+├── CANDIDATES.md            every candidate examined, including rejections
+└── LM-ARENA-CONSTRAINTS.md  measured sandbox limits
+```
+
+`INDEX.md` and the other documents live in `skill-library/`, **not** in `skills/`, on purpose:
+every `.md` file under the root directory becomes a selectable skill, and documentation must
+never be shipped to LM Arena as if it were one. `tests/skillLibrary.test.ts` enforces this,
+along with the absence of secrets, duplicates, empty files and orphan categories.
+
+Scope is deliberate: Java/Kotlin/Android, Rust, Go, cloud deployment, browser automation and
+offensive security are **not** included, because none of them can be verified in the LM Arena
+sandbox (no JVM, no browser, no credentials). Shipping unverified instructions would be worse
+than shipping none.
 
 ---
 
@@ -552,7 +592,7 @@ You are running `npm run dev` in a normal tab. Load `dist/` as an unpacked exten
 | Artifact | Contents |
 | --- | --- |
 | `skillbridge-extension-1.0.0.zip` | Production extension: `manifest.json`, `background.js`, `content.js`, `popup.html`, `manager.html`, `assets/`, `icons/`. Ready for **Load unpacked**. |
-| `skillbridge-source-1.0.0.zip` | Complete source: `src/`, `tests/`, `scripts/`, `public/`, configs, docs. |
+| `skillbridge-source-1.0.0.zip` | Complete source: `src/`, `skills/`, `skill-library/`, `tests/`, `scripts/`, `public/`, configs, docs. |
 | `CHECKSUMS.txt` | SHA-256 of both archives plus a per-file size table. |
 
 ---

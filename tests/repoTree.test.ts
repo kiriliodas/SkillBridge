@@ -59,7 +59,7 @@ describe('parseRepositoryTree', () => {
     expect(result.skills.map((s) => s.name).sort()).toEqual(
       [
         'Accessibility',
-        'Api Design',
+        'API Design',
         'Architecture',
         'Coroutines',
         'Database Design',
@@ -68,7 +68,7 @@ describe('parseRepositoryTree', () => {
         'Project Management',
         'React Best Practices',
         'README',
-        'Sql Best Practices',
+        'SQL Best Practices',
       ].sort(),
     );
     expect(result.skills.some((s) => s.fileName === 'package.json')).toBe(false);
@@ -180,12 +180,24 @@ describe('parseRepositoryTree', () => {
 describe('deriveSkillName', () => {
   it('prettifies file names', () => {
     expect(deriveSkillName('Android/Kotlin/kotlin-standards.md')).toBe('Kotlin Standards');
-    expect(deriveSkillName('api_design.md')).toBe('Api Design');
+    expect(deriveSkillName('api_design.md')).toBe('API Design');
     expect(deriveSkillName('Material Design.md')).toBe('Material Design');
     expect(deriveSkillName('Réseau & Sécurité.md')).toBe('Réseau & Sécurité');
     expect(deriveSkillName('SQL.md')).toBe('SQL');
     expect(deriveSkillName('iOS-guidelines.md')).toBe('IOS Guidelines');
     expect(deriveSkillName('README.md')).toBe('README');
+  });
+
+  it('restores common technical acronyms instead of sentence-casing them', () => {
+    expect(deriveSkillName('api-design.md')).toBe('API Design');
+    expect(deriveSkillName('sql-schema.md')).toBe('SQL Schema');
+    expect(deriveSkillName('ui-review.md')).toBe('UI Review');
+    expect(deriveSkillName('rag-context.md')).toBe('RAG Context');
+    expect(deriveSkillName('llm-output.md')).toBe('LLM Output');
+    expect(deriveSkillName('wcag-2-2.md')).toBe('WCAG 2 2');
+    // Ordinary words are not treated as acronyms.
+    expect(deriveSkillName('machine-learning.md')).toBe('Machine Learning');
+    expect(deriveSkillName('product-discovery.md')).toBe('Product Discovery');
   });
 
   it('uses the folder name for generic file names', () => {
