@@ -48,13 +48,27 @@ export interface CategoryNode {
 
 export interface RepoSnapshot {
   config: RepoConfig;
-  /** Abbreviated commit SHA the tree was read at; used for cache invalidation. */
+  /**
+   * Abbreviated revision the tree was read at; used for cache invalidation.
+   *
+   * Usually a commit SHA. It falls back to the branch name when the commit could not be
+   * verified (first run offline, rate-limited), because a branch always resolves on every
+   * host while a guessed SHA does not.
+   */
   commit: string;
   fetchedAt: number;
   skills: SkillEntry[];
   tree: CategoryNode;
   /** Non-fatal warnings produced while building the tree. */
   warnings: string[];
+  /**
+   * Verified commit SHA to pin file downloads to, when resolution succeeded.
+   *
+   * Distinct from `commit`, which is abbreviated for display and may be a branch name.
+   * When absent, downloads fall back to the branch. A *tree* SHA is never stored here:
+   * it is not a valid `ref` for raw.githubusercontent.com or the Contents API.
+   */
+  revision?: string;
 }
 
 /**
@@ -73,11 +87,15 @@ export interface CacheScope {
 }
 
 /** Derive the cache scope of a snapshot (repository + exact revision). */
-export function snapshotScope(snapshot: Pick<RepoSnapshot, 'config' | 'commit'>): CacheScope {
+export function snapshotScope(
+  snapshot: Pick<RepoSnapshot, 'config' | 'commit'> & { revision?: string },
+): CacheScope {
   return {
     owner: snapshot.config.owner,
     repo: snapshot.config.repo,
-    revision: snapshot.commit,
+    // Full SHA when pinned: two snapshots of the same commit must share a cache entry,
+    // and an abbreviated SHA must never be confused with a different one.
+    revision: snapshot.revision ?? snapshot.commit,
   };
 }
 

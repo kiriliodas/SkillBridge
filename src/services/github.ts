@@ -120,16 +120,91 @@ export function buildTreeUrl(config: RepoConfig, ref?: string): string {
   return `${GITHUB_API_BASE}/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/git/trees/${target}?recursive=1`;
 }
 
+/** Normalise a repository path: no leading/trailing slashes, no empty segments. */
+function cleanPath(path: string): string {
+  return path
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('/');
+}
+
+/**
+ * Build the raw.githubusercontent.com URL for a skill file.
+ *
+ * `path` may be either repository-relative (as carried by `SkillEntry.path`, which already
+ * includes the configured root directory) or relative to the root directory. Both are
+ * accepted so that `rootDir` is applied exactly once: passing `skills/ai/x.md` with
+ * `rootDir: "skills"` must NOT produce `skills/skills/ai/x.md`, which is a 404 on every
+ * file and used to make the whole compilation fail on nested folders.
+ */
 export function buildRawUrl(config: RepoConfig, path: string, ref?: string): string {
   const c = normalizeRepoConfig(config);
-  const prefix = c.rootDir ? `${c.rootDir}/` : '';
-  const encoded = `${prefix}${path}`
+  const rel = cleanPath(path);
+  const prefixed = c.rootDir && rel !== c.rootDir && !rel.startsWith(`${c.rootDir}/`);
+  const encoded = (prefixed ? `${c.rootDir}/${rel}` : rel)
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/');
   return `${GITHUB_RAW_BASE}/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/${encodeURIComponent(
     ref ?? c.branch,
   )}/${encoded}`;
+}
+
+export interface RepoRevision {
+  /** Value to pass as `ref` to the raw host and to the Contents API. */
+  ref: string;
+  /** SHA of the tree the listing came from (may equal `ref` when GitHub returns it). */
+  treeSha: string;
+  /** True when `ref` is a real commit SHA rather than a branch name. */
+  pinned: boolean;
+}
+
+/**
+ * Resolve the revision used to download file contents.
+ *
+ * `GET /git/trees/{ref}` is ambiguous about what it returns in `sha`: for a branch name
+ * GitHub resolves the ref and echoes back the *commit* SHA, while requesting a tree by its
+ * own SHA echoes the tree SHA. Only a commit SHA is guaranteed to be a valid `ref` for
+ * both raw.githubusercontent.com and the Contents API, so the commit is verified before
+ * it is used. When verification is impossible (rate limit, offline), the branch name is
+ * used: it still resolves on every host, it is simply not pinned.
+ *
+ * Never fall back to a *tree* SHA as a download ref — that is precisely the mistake that
+ * turns a truncated or synthetic listing into 404s on every file.
+ */
+export async function resolveRevision(
+  config: RepoConfig,
+  ref: string | undefined,
+  deps: GithubDeps = {},
+  treeSha = '',
+): Promise<RepoRevision> {
+  const c = normalizeRepoConfig(config);
+  const target = ref ?? c.branch;
+  const looksLikeSha = /^[0-9a-f]{7,40}$/i.test(target);
+  if (!looksLikeSha) return { ref: target, treeSha: treeSha || target, pinned: false };
+  try {
+    const response = await safeFetch(
+      `${GITHUB_API_BASE}/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/git/commits/${encodeURIComponent(target)}`,
+      { headers: headers(deps.token) },
+      deps.fetchImpl ?? fetch,
+    );
+    if (!response.ok) {
+      // A 404 is proof that the value is not a commit (a tree sha, for instance): use the
+      // branch, which always resolves. Any other status (rate limit, 5xx) means we cannot
+      // tell, so the value is kept — it is most likely a commit and the branch is the net.
+      if (response.status === 404) return { ref: c.branch, treeSha: treeSha || '', pinned: false };
+      return { ref: target, treeSha: treeSha || target, pinned: false };
+    }
+    const json = (await response.json()) as { sha?: string; tree?: { sha?: string } };
+    if (!json.sha || json.sha.toLowerCase() !== target.toLowerCase()) {
+      // Not a commit: use the branch, which always resolves.
+      return { ref: c.branch, treeSha: json.tree?.sha ?? treeSha ?? '', pinned: false };
+    }
+    return { ref: json.sha, treeSha: json.tree?.sha ?? treeSha ?? json.sha, pinned: true };
+  } catch {
+    return { ref: target, treeSha: treeSha || target, pinned: false };
+  }
 }
 
 /** Fetch the repository tree through the REST API. */
@@ -211,13 +286,23 @@ export async function loadRepositorySnapshot(
     }
   }
 
+  // The listing's `sha` may be a commit or a tree depending on how the ref was resolved.
+  // Verify it before letting it become both the cache revision and the download ref.
+  const revision = await resolveRevision(
+    normalized,
+    treeResult.data.sha || normalized.branch,
+    deps,
+    treeResult.data.sha,
+  );
+
   const snapshot: RepoSnapshot = {
     config: normalized,
-    commit: treeResult.data.sha ? treeResult.data.sha.slice(0, 12) : normalized.branch,
+    commit: revision.ref ? revision.ref.slice(0, 12) : normalized.branch,
     fetchedAt: Date.now(),
     skills: parsed.skills,
     tree: parsed.tree,
     warnings,
+    revision: revision.pinned ? revision.ref : undefined,
   };
   return { ok: true, data: snapshot };
 }
@@ -233,28 +318,39 @@ export async function fetchSkillContent(
   const url = buildRawUrl(config, path, ref);
   try {
     const response = await safeFetch(url, { headers: { Accept: 'text/plain' } }, fetchImpl);
-    if (!response.ok) {
-      if (response.status === 404) {
-        return {
-          ok: false,
-          error: errorInfo(
-            'NOT_FOUND',
-            `Skill file not found: ${path}`,
-            'It may have been deleted or renamed since the repository was refreshed. Refresh the repository.',
-            404,
-          ),
-        };
-      }
-      // Server-side or rate-limit problem on the raw host: try the API path.
-      return fetchSkillContentViaApi(config, path, ref, deps);
+    if (response.ok) {
+      const text = await response.text();
+      return { ok: true, data: text };
     }
-    const text = await response.text();
-    return { ok: true, data: text };
-  } catch {
-    // Raw host unreachable (proxy, firewall, DNS): retry through the REST API.
+    // Any failure on the raw host triggers the API fallback, including 404.
+    //
+    // A 404 here does NOT prove the file is missing: the raw host answers 404 for a
+    // malformed reference, for a CDN hiccup and for a path built from a stale root
+    // directory. Returning NOT_FOUND on the first 404 is what turned a path bug into a
+    // hard compilation failure with no second chance. The Contents API resolves the same
+    // file against the commit, so it is the authoritative answer.
+    if (response.status !== 404) {
+      const fallback = await fetchSkillContentViaApi(config, path, ref, deps);
+      return fallback;
+    }
     const fallback = await fetchSkillContentViaApi(config, path, ref, deps);
     if (fallback.ok) return fallback;
+    // Both hosts agree: report the raw host's 404 message, which names the path.
+    if (fallback.error.code === 'NOT_FOUND') {
+      return {
+        ok: false,
+        error: errorInfo(
+          'NOT_FOUND',
+          `Skill file not found: ${path}`,
+          'It may have been deleted or renamed since the repository was refreshed. Refresh the repository.',
+          404,
+        ),
+      };
+    }
     return fallback;
+  } catch {
+    // Raw host unreachable (proxy, firewall, DNS): retry through the REST API.
+    return fetchSkillContentViaApi(config, path, ref, deps);
   }
 }
 

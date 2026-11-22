@@ -281,13 +281,39 @@ describe('fetchSkillContentViaApi (raw-host fallback)', () => {
     expect(result.ok && result.data).toBe(content);
   });
 
-  it('does not fall back when the file genuinely does not exist', async () => {
-    const fetchImpl = vi.fn(async () => textResponse('404: Not Found', 404));
+  it('tries the Contents API before declaring a file missing', async () => {
+    // A 404 from the raw host is not proof of absence: it is also what a malformed ref
+    // or a stale path produces. The API is the authority, so it must be consulted.
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).includes('raw.githubusercontent.com')
+        ? textResponse('404: Not Found', 404)
+        : textResponse('404: Not Found', 404),
+    );
     const result = await fetchSkillContent(config, 'A/b.md', 'sha', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     expect(!result.ok && result.error.code).toBe('NOT_FOUND');
-    expect((fetchImpl.mock.calls as unknown as [string][]).length).toBe(1);
+    const urls = (fetchImpl.mock.calls as unknown as [string][]).map((c) => c[0]);
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain('raw.githubusercontent.com');
+    expect(urls[1]).toContain('/contents/A/b.md');
+  });
+
+  it('recovers a file that the raw host 404s but the API can serve', async () => {
+    const body = '# nested\n\ncontent\n';
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).includes('raw.githubusercontent.com')
+        ? textResponse('404: Not Found', 404)
+        : jsonResponse({
+            content: Buffer.from(body, 'utf8').toString('base64'),
+            encoding: 'base64',
+            size: body.length,
+          }),
+    );
+    const result = await fetchSkillContent(config, 'A/B/C/deep.md', 'sha', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.ok && result.data).toBe(body);
   });
 });
 

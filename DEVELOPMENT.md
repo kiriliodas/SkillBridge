@@ -50,7 +50,7 @@ modules carry the correctness guarantees, so every behaviour change needs a test
 
 | Module | Notes |
 | --- | --- |
-| `github.ts` | `fetchRepoTree`, `loadRepositorySnapshot`, `fetchSkillContent`, `probeRepository`. Every function takes `{ fetchImpl?, token? }`, so tests never touch the network. Errors are `RepoErrorInfo` with an actionable `hint`. |
+| `github.ts` | `fetchRepoTree`, `loadRepositorySnapshot`, `resolveRevision`, `fetchSkillContent`, `probeRepository`. Every function takes `{ fetchImpl?, token? }`, so tests never touch the network. Errors are `RepoErrorInfo` with an actionable `hint`. `buildRawUrl` accepts paths that are already repository-relative and applies `rootDir` at most once; a 404 from the raw host always falls through to the Contents API before `NOT_FOUND` is reported. |
 | `cache.ts` | `KeyValueStore` interface (`ChromeLocalStore`, `MemoryStore`), `RepoCache` (snapshots + skill bodies, TTL, size cap, eviction). Skill entries are keyed by `skillCacheKey(scope, path)` = `sha256(owner::repo::revision::path)`; `repoCache.readSkillAny(scope, path)` / `writeSkill(scope, entry)` require a `CacheScope` and refuse unscoped records. Writes are best-effort and evict on quota errors. |
 | `packageService.ts` | `buildPackage(snapshot, selection, deps)` = resolve (cache→network) → verify hashes → compile → prompt. `resolveSkillSources`, `prefetchSkillContents`. Both derive the cache scope with `snapshotScope(snapshot)`, so content is never shared across repositories or commits. |
 | `settings.ts` | `sanitizeSettings` (never throws), `SettingsService` with deep merge. |
@@ -184,6 +184,21 @@ suppresses the default action when the control is a submit button so a probe can
 never send a message. If LM Arena later uploads through a drop zone or a paste
 handler instead, add that as another strategy in `attachPackage` — keep
 `verifyAttachment` independent of *how* the file got there.
+
+### Change how files are downloaded
+
+Two invariants keep downloads correct; both are covered by `tests/downloadRevision.test.ts`.
+
+1. **`rootDir` is applied exactly once.** `SkillEntry.path` is repository-relative (it already
+   contains the root directory) while `SkillEntry.relPath` is relative to it. `buildRawUrl`
+   detects which of the two it was given, so `skills/ai/x.md` with `rootDir: "skills"` never
+   becomes `skills/skills/ai/x.md`.
+2. **The download ref is a commit or a branch, never a tree.** `GET /git/trees/{ref}` echoes a
+   commit SHA for a branch name but a tree SHA when asked for a tree, and a tree SHA is not a
+   valid `ref` for `raw.githubusercontent.com` or the Contents API. `resolveRevision` verifies
+   the value through `/git/commits/{sha}` and falls back to the branch when it cannot; the
+   verified SHA lives in `RepoSnapshot.revision` (used for downloads and cache scoping) while
+   `RepoSnapshot.commit` stays abbreviated for the UI.
 
 ### Add a repository source (future: multiple repos)
 
