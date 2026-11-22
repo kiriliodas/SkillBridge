@@ -32,7 +32,7 @@ describe('searchSkills', () => {
 
   it('finds by file name fragments', () => {
     expect(names('best-practices')).toEqual(
-      expect.arrayContaining(['React Best Practices', 'Sql Best Practices']),
+      expect.arrayContaining(['React Best Practices', 'SQL Best Practices']),
     );
   });
 
