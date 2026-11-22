@@ -230,18 +230,12 @@ export class LmArenaAdapter {
       return { step: 'insert-prompt', status: 'failed', message: 'Message input not found.' };
     }
     let activeComposer = composer.handle;
-    let ok = fillComposer(activeComposer, prompt);
-    if (!ok) {
-      return {
-        step: 'insert-prompt',
-        status: 'failed',
-        message: 'The prompt could not be written into the message input.',
-      };
-    }
+    // fillComposer's immediate return value is only a first DOM-level check.
+    // A controlled React composer can replace or reconcile its textarea during
+    // the same update, so do not report failure until the settled, current
+    // composer has been inspected.
+    fillComposer(activeComposer, prompt);
 
-    // React-controlled textareas may reconcile their state immediately after
-    // the input event. Wait for that render before reporting success, then
-    // retry once against the current visible composer if the value was reset.
     await this.settle();
     let current = findComposer(doc);
     if (!current) {
@@ -252,16 +246,17 @@ export class LmArenaAdapter {
       };
     }
     activeComposer = current.handle;
-    if (!composerContainsPrompt(activeComposer, prompt)) {
-      ok = fillComposer(activeComposer, prompt);
-      if (ok) {
-        await this.settle();
-        current = findComposer(doc);
-        ok = Boolean(current && composerContainsPrompt(current.handle, prompt));
-        if (current) activeComposer = current.handle;
+    let retained = composerContainsPrompt(activeComposer, prompt);
+    if (!retained) {
+      fillComposer(activeComposer, prompt);
+      await this.settle();
+      current = findComposer(doc);
+      if (current) {
+        activeComposer = current.handle;
+        retained = composerContainsPrompt(activeComposer, prompt);
       }
     }
-    if (!ok || !composerContainsPrompt(activeComposer, prompt)) {
+    if (!retained) {
       return {
         step: 'insert-prompt',
         status: 'failed',
