@@ -229,7 +229,8 @@ export class LmArenaAdapter {
     if (!composer) {
       return { step: 'insert-prompt', status: 'failed', message: 'Message input not found.' };
     }
-    const ok = fillComposer(composer.handle, prompt);
+    let activeComposer = composer.handle;
+    let ok = fillComposer(activeComposer, prompt);
     if (!ok) {
       return {
         step: 'insert-prompt',
@@ -237,10 +238,39 @@ export class LmArenaAdapter {
         message: 'The prompt could not be written into the message input.',
       };
     }
+
+    // React-controlled textareas may reconcile their state immediately after
+    // the input event. Wait for that render before reporting success, then
+    // retry once against the current visible composer if the value was reset.
+    await this.settle();
+    let current = findComposer(doc);
+    if (!current) {
+      return {
+        step: 'insert-prompt',
+        status: 'failed',
+        message: 'The message input disappeared after the prompt was inserted.',
+      };
+    }
+    activeComposer = current.handle;
+    if (!composerContainsPrompt(activeComposer, prompt)) {
+      ok = fillComposer(activeComposer, prompt);
+      if (ok) {
+        await this.settle();
+        current = findComposer(doc);
+        ok = Boolean(current && composerContainsPrompt(current.handle, prompt));
+      }
+    }
+    if (!ok || !composerContainsPrompt(activeComposer, prompt)) {
+      return {
+        step: 'insert-prompt',
+        status: 'failed',
+        message: 'LM Arena did not retain the prompt after updating the message input. Paste the prompt manually.',
+      };
+    }
     return {
       step: 'verify-prompt',
       status: 'ok',
-      message: `Prompt inserted (${prompt.length} characters).`,
+      message: `Prompt inserted and retained (${prompt.length} characters).`,
     };
   }
 
